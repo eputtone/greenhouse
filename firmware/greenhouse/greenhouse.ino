@@ -12,6 +12,12 @@ const prog_char ssid[] PROGMEM = {"vauhtikeinu"};		// max 32 bytes
 
 unsigned char security_type = 3;	// 0 - open; 1 - WEP; 2 - WPA; 3 - WPA2
 
+<<<<<<< HEAD
+=======
+// WPA/WPA2 passphrase
+const prog_char security_passphrase[] PROGMEM = {"Huomenna_alkaa_1k4v4_tyopaiva512"};	// max 64 characters
+
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
 // WEP 128-bit keys
 // sample HEX keys
 prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,	// Key 0
@@ -20,9 +26,12 @@ prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00	// Key 3
 				};
 
+<<<<<<< HEAD
 // WPA/WPA2 passphrase
 const prog_char security_passphrase[] PROGMEM = {"XXXX"};	// max 64 characters
 
+=======
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
 // setup the wireless mode
 // infrastructure - connect to AP
 // adhoc - connect to another WiFi device
@@ -39,13 +48,18 @@ const int PIN_MOISTURE_2 = 1;
 const int PIN_PUMP = 3;
 const int PIN_WATER_METER = 1;
 
+<<<<<<< HEAD
 #include <dht11.h>
 dht11 DHT11;
 const int PIN_DHT11 = 4;
+=======
+int loop_counter = 0;
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
 
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
   
+<<<<<<< HEAD
     if (strcmp(URL, "/") == 0) {
         WiServer.print("<html>");
 
@@ -71,6 +85,12 @@ boolean sendMyPage(char* URL) {
         WiServer.print((float)DHT11.temperature, 2);    
         WiServer.print("<br/>");
         
+=======
+    // Check if the requested URL matches "/"
+    if (strcmp(URL, "/") == 0) {
+        // Use WiServer's print and println functions to write out the page content
+        WiServer.print("<html>");
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
         if (isWaterBarrelEmpty()) {
           WiServer.print("Water: empty");
         } else {
@@ -81,6 +101,11 @@ boolean sendMyPage(char* URL) {
         WiServer.print("<br/>");
         WiServer.print(getMoistureValue(PIN_MOISTURE_2));
         WiServer.print("<br/>");
+<<<<<<< HEAD
+=======
+        WiServer.print("Loop counter: ");
+        WiServer.print(loop_counter);
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
         WiServer.print("</html>");
             
         // URL was recognized
@@ -146,6 +171,11 @@ void loop() {
     digitalWrite(PIN_PUMP, HIGH);
   }
 
+<<<<<<< HEAD
+=======
+  loop_counter++;
+
+>>>>>>> 724b9e439c0848664ebba38d2ccac1bc72b59d20
 }
 
 
