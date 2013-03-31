@@ -1,0 +1,10 @@
+{
+	"id": "0",
+	"sensorData": {
+		"waterBarrelEmpty": true,
+		"temperature": "26.00",
+		"humidity": "39.00",
+		"moisture1": "0",
+		"moisture2": "0"
+	}
+}

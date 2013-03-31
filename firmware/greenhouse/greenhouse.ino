@@ -21,7 +21,7 @@ prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 				};
 
 // WPA/WPA2 passphrase
-const prog_char security_passphrase[] PROGMEM = {"XXXX"};	// max 64 characters
+const prog_char security_passphrase[] PROGMEM = {"xxxxxx"};	// max 64 characters
 
 // setup the wireless mode
 // infrastructure - connect to AP
@@ -39,6 +39,8 @@ const int PIN_MOISTURE_2 = 1;
 const int PIN_PUMP = 3;
 const int PIN_WATER_METER = 1;
 
+int idCounter = 0;
+
 #include <dht11.h>
 dht11 DHT11;
 const int PIN_DHT11 = 4;
@@ -46,48 +48,15 @@ const int PIN_DHT11 = 4;
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
   
-    if (strcmp(URL, "/") == 0) {
-        WiServer.print("<html>");
-
-        int chk = DHT11.read(PIN_DHT11);
-        switch (chk) {  
-          case DHTLIB_OK: 
-            WiServer.println("OK"); 
-            break;
-          case DHTLIB_ERROR_CHECKSUM: 
-            WiServer.println("Checksum error"); 
-            break;
-          case DHTLIB_ERROR_TIMEOUT: 
-            WiServer.println("Time out error"); 
-            break;
-          default: 
-            WiServer.println("Unknown error"); 
-            break;
-        }
-        WiServer.print("Humidity (%): ");
-        WiServer.print((float)DHT11.humidity, 2);
-        WiServer.print("<br/>");
-        WiServer.print("Temperature (oC): ");
-        WiServer.print((float)DHT11.temperature, 2);    
-        WiServer.print("<br/>");
-        
-        if (isWaterBarrelEmpty()) {
-          WiServer.print("Water: empty");
-        } else {
-          WiServer.print("Water: filled");
-        }
-        WiServer.print("<br/>");
-        WiServer.print(getMoistureValue(PIN_MOISTURE_1));
-        WiServer.print("<br/>");
-        WiServer.print(getMoistureValue(PIN_MOISTURE_2));
-        WiServer.print("<br/>");
-        WiServer.print("</html>");
-            
-        // URL was recognized
-        return true;
-    }
-    // URL not found
-    return false;
+  if (strcmp(URL, "/") == 0) {
+    writeHttpGreenhouseDataHumanReadable();
+    return true;
+  } else if (strcmp(URL, "/greenhouse/status") == 0) {
+    writeHttpGreenhouseDataJSON();
+    return true;
+  }
+  // URL not found
+  return false;
 }
 
 boolean isWaterBarrelEmpty() {
@@ -97,6 +66,71 @@ boolean isWaterBarrelEmpty() {
   } else {
     return false;
   }
+}
+
+void writeHttpGreenhouseDataJSON() {
+  float temperature = -999.99;
+  float humidity = -999.99;
+  int chk = DHT11.read(PIN_DHT11);
+  switch (chk) {  
+    case DHTLIB_OK: 
+      humidity = (float)DHT11.humidity;
+      temperature = (float)DHT11.temperature;
+      break;
+  }
+  
+  WiServer.print("{\n");
+  WiServer.print("\t\"id\": \"");
+  WiServer.print(idCounter++);
+  WiServer.print("\",\n\t\"sensorData\": {\n\t\t\"waterBarrelEmpty\": ");  
+  WiServer.print(isWaterBarrelEmpty()?"true":"false");
+  WiServer.print(",\n\t\t\"temperature\": \"");
+  WiServer.print(temperature, 2);
+  WiServer.print("\",\n\t\t\"humidity\": \"");
+  WiServer.print(humidity, 2);
+  WiServer.print("\",\n\t\t\"moisture1\": \"");
+  WiServer.print(analogRead(PIN_MOISTURE_1));
+  WiServer.print("\",\n\t\t\"moisture2\": \"");
+  WiServer.print(analogRead(PIN_MOISTURE_2));
+  WiServer.print("\"\n\t}\n}");
+}
+
+void writeHttpGreenhouseDataHumanReadable() {
+    WiServer.print("<html>");
+
+    int chk = DHT11.read(PIN_DHT11);
+    switch (chk) {  
+      case DHTLIB_OK: 
+        WiServer.println("OK"); 
+        break;
+      case DHTLIB_ERROR_CHECKSUM: 
+        WiServer.println("Checksum error"); 
+        break;
+      case DHTLIB_ERROR_TIMEOUT: 
+        WiServer.println("Time out error"); 
+        break;
+      default: 
+        WiServer.println("Unknown error"); 
+        break;
+    }
+    WiServer.print("Humidity (%): ");
+    WiServer.print((float)DHT11.humidity, 2);
+    WiServer.print("<br/>");
+    WiServer.print("Temperature (oC): ");
+    WiServer.print((float)DHT11.temperature, 2);    
+    WiServer.print("<br/>");
+    
+    if (isWaterBarrelEmpty()) {
+      WiServer.print("Water: empty");
+    } else {
+      WiServer.print("Water: filled");
+    }
+    WiServer.print("<br/>");
+    WiServer.print(getMoistureValue(PIN_MOISTURE_1));
+    WiServer.print("<br/>");
+    WiServer.print(getMoistureValue(PIN_MOISTURE_2));
+    WiServer.print("<br/>");
+    WiServer.print("</html>");
 }
 
 String getMoistureValue(int pinNo) {

@@ -1,0 +1,30 @@
+{
+    "name": "greenhouseData",
+    "properties": {
+        "id": {
+            "type": "number",
+            "description": "Data package identifier",
+            "required": true
+        },
+        "sensorData" : {
+            "type" : "object", 
+            "properties" : {  
+              "waterBarrelEmpty": {
+                "type": "boolean"
+              },
+              "temperature": {
+                "type": "number"
+              },
+              "humidity": {
+                "type": "number"
+              },
+              "moisture1": {
+                "type": "number"
+              },
+               "moisture2": {
+                "type": "number"
+              }
+            }
+        }
+    }
+}
