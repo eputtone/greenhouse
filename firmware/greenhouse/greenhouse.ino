@@ -36,14 +36,14 @@ unsigned char security_passphrase_len;
 const int PIN_MOISTURE_1 = 0;
 const int PIN_MOISTURE_2 = 1;
 
-const int PIN_PUMP = 3;
-const int PIN_WATER_METER = 1;
+const int PIN_PUMP = 4;
+const int PIN_WATER_METER = 3;
 
 int idCounter = 0;
 
 #include <dht11.h>
 dht11 DHT11;
-const int PIN_DHT11 = 4;
+const int PIN_DHT11 = 5;
 
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
@@ -53,6 +53,9 @@ boolean sendMyPage(char* URL) {
     return true;
   } else if (strcmp(URL, "/greenhouse/status") == 0) {
     writeHttpGreenhouseDataJSON();
+    return true;
+  } else if (strcmp(URL, "/greenhouse/counter") == 0) {
+    writeHttpResponseNumber();    
     return true;
   }
   // URL not found
@@ -93,6 +96,10 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print("\",\n\t\t\"moisture2\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_2));
   WiServer.print("\"\n\t}\n}");
+}
+
+void writeHttpResponseNumber() {
+  WiServer.print(idCounter++);
 }
 
 void writeHttpGreenhouseDataHumanReadable() {
@@ -159,7 +166,8 @@ void setup() {
 
   pinMode(PIN_WATER_METER, INPUT);
   pinMode(PIN_WATER_METER, HIGH);  
-  pinMode(PIN_PUMP, OUTPUT);     
+  pinMode(PIN_PUMP, OUTPUT);    
+  digitalWrite(PIN_PUMP, LOW); 
   
   // Initialize WiServer and have it use the sendMyPage function to serve pages
   WiServer.init(sendMyPage);
@@ -176,10 +184,10 @@ void loop() {
   
   if (isWaterBarrelEmpty()) {
     digitalWrite(PIN_PUMP, LOW);
-  } else {
+  } else { 
     digitalWrite(PIN_PUMP, HIGH);
   }
-
+  
 }
 
 
