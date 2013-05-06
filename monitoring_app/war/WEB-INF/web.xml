@@ -6,6 +6,16 @@
          xmlns="http://java.sun.com/xml/ns/javaee">
 
   <!-- Servlets -->
+  <servlet>
+    <servlet-name>statusService</servlet-name>
+    <servlet-class>
+      fi.fullerine.greenhouse.server.GreenhouseStatusServiceImpl
+    </servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>statusService</servlet-name>
+    <url-pattern>/monitoring_app/statusService</url-pattern>
+  </servlet-mapping>
   
   <!-- Default page to serve -->
   <welcome-file-list>
