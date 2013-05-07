@@ -6,13 +6,13 @@ import java.math.BigInteger;
 public class GreenhouseStatus implements Serializable {
 	private static final long serialVersionUID = 1L;
 	
-	private BigInteger id;
+	private Integer id;
 	private SensorData sensorData;
 	
-	public BigInteger getId() {
+	public Integer getId() {
 		return id;
 	}
-	public void setId(BigInteger id) {
+	public void setId(Integer id) {
 		this.id = id;
 	}
 	public SensorData getSensorData() {

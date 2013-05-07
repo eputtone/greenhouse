@@ -24,7 +24,7 @@ import fi.fullerine.greenhouse.shared.SensorData;
  */
 public class Monitoring_app implements EntryPoint {
 
-	private static final String JSON_URL = "http://localhost:8889/monitoring_service";
+	private GreenhouseStatusServiceAsync statusService = (GreenhouseStatusServiceAsync) GWT.create(GreenhouseStatusService.class);
 
 	private VerticalPanel mainPanel = new VerticalPanel();
 	private FlexTable sensorDataTable = new FlexTable();
@@ -69,8 +69,6 @@ public class Monitoring_app implements EntryPoint {
 	}
 
 	private void queryData() {		
-		String url = URL.encode(JSON_URL);
-		GreenhouseStatusServiceAsync statusService = (GreenhouseStatusServiceAsync) GWT.create(GreenhouseStatusService.class);
 		AsyncCallback<GreenhouseStatus> callback = new AsyncCallback<GreenhouseStatus>() {
     		public void onSuccess(GreenhouseStatus result) {
 				populateTable(result);

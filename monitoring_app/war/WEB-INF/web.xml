@@ -17,6 +17,17 @@
     <url-pattern>/monitoring_app/statusService</url-pattern>
   </servlet-mapping>
   
+  <servlet>
+    <servlet-name>statusPollerService</servlet-name>
+    <servlet-class>
+      fi.fullerine.greenhouse.server.GreenhouseStatusPollerServlet
+    </servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>statusPollerService</servlet-name>
+    <url-pattern>/_ah/start</url-pattern>
+  </servlet-mapping> 
+  
   <!-- Default page to serve -->
   <welcome-file-list>
     <welcome-file>Monitoring_app.html</welcome-file>
