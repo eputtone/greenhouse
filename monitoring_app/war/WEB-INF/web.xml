@@ -25,7 +25,7 @@
   </servlet>
   <servlet-mapping>
     <servlet-name>statusPollerService</servlet-name>
-    <url-pattern>/_ah/start</url-pattern>
+    <url-pattern>/poll-status</url-pattern>
   </servlet-mapping> 
   
   <!-- Default page to serve -->

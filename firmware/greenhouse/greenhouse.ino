@@ -21,7 +21,7 @@ prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 				};
 
 // WPA/WPA2 passphrase
-const prog_char security_passphrase[] PROGMEM = {"xxxxxx"};	// max 64 characters
+const prog_char security_passphrase[] PROGMEM = {"xxxxxxxx"};	// max 64 characters
 
 // setup the wireless mode
 // infrastructure - connect to AP
@@ -35,15 +35,43 @@ unsigned char security_passphrase_len;
 
 const int PIN_MOISTURE_1 = 0;
 const int PIN_MOISTURE_2 = 1;
-
 const int PIN_PUMP = 4;
 const int PIN_WATER_METER = 3;
+const int PIN_RESET = 6;
+const int PIN_LED = 7;
 
 int idCounter = 0;
+
+unsigned long loopCounter = 0;
+const unsigned long resetInterval = 3600000;
+unsigned long currentTime = 0;
 
 #include <dht11.h>
 dht11 DHT11;
 const int PIN_DHT11 = 5;
+
+void setup() {
+  pinMode(PIN_RESET, OUTPUT);
+  digitalWrite(PIN_RESET, LOW);
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, HIGH); 
+  
+  Serial.begin(57600);
+  Serial.println("Init starting..."); 
+
+  pinMode(PIN_WATER_METER, INPUT);
+  pinMode(PIN_WATER_METER, HIGH);  
+  pinMode(PIN_PUMP, OUTPUT);    
+  digitalWrite(PIN_PUMP, LOW); 
+  
+  // Initialize WiServer and have it use the sendMyPage function to serve pages
+  WiServer.init(sendMyPage);
+  
+  // Enable Serial output and ask WiServer to generate log messages (optional)
+  WiServer.enableVerboseMode(false);
+
+  Serial.println("init done!");
+}
 
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
@@ -81,7 +109,6 @@ void writeHttpGreenhouseDataJSON() {
       temperature = (float)DHT11.temperature;
       break;
   }
-  
   WiServer.print("{\n");
   WiServer.print("\t\"id\": \"");
   WiServer.print(idCounter++);
@@ -160,24 +187,6 @@ String getMoistureValue(int pinNo) {
   }
 }
 
-void setup() {
-  Serial.begin(57600);
-  Serial.println("Init starting...");
-
-  pinMode(PIN_WATER_METER, INPUT);
-  pinMode(PIN_WATER_METER, HIGH);  
-  pinMode(PIN_PUMP, OUTPUT);    
-  digitalWrite(PIN_PUMP, LOW); 
-  
-  // Initialize WiServer and have it use the sendMyPage function to serve pages
-  WiServer.init(sendMyPage);
-  
-  // Enable Serial output and ask WiServer to generate log messages (optional)
-  WiServer.enableVerboseMode(true);
-
-  Serial.println("init done!");
-}
-
 void loop() {
   // Run WiServer
   WiServer.server_task();
@@ -188,6 +197,20 @@ void loop() {
     digitalWrite(PIN_PUMP, HIGH);
   }
   
+  // reset every now and then, because wifi shield is unstable
+  currentTime = millis();
+  if (currentTime > resetInterval) {
+    Serial.println("RESET!");
+    digitalWrite(PIN_RESET, HIGH);
+  }
+  
+  delay(10); 
+  loopCounter++;
+  if (loopCounter % 100 == 0) {
+    digitalWrite(PIN_LED, LOW);
+  } else if (loopCounter % 50 == 0) { 
+    digitalWrite(PIN_LED, HIGH); 
+  }
 }
 
 

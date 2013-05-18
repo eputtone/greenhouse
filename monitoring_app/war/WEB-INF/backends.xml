@@ -1,5 +1,0 @@
-<backends>
-  <backend name="status-poller">
-    <class>B1</class>
- </backend>
-</backends>

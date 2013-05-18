@@ -27,7 +27,7 @@ public class GreenhouseStatusPollerServlet extends HttpServlet {
 	@Override
 	protected void doGet(HttpServletRequest req, HttpServletResponse resp)
 			throws ServletException, IOException {
-		thread = ThreadManager.createBackgroundThread(new Runnable() {
+/*		thread = ThreadManager.createBackgroundThread(new Runnable() {
 			public void run() {
 				try {
 					while (true) {
@@ -40,7 +40,9 @@ public class GreenhouseStatusPollerServlet extends HttpServlet {
 				}
 			}
 		});
-		thread.start();
+		thread.start();*/
+		GreenhouseStatus gs = util.pollGreenhouseStatus();
+		saveGreenhouseStatus(gs);		
 	}
 
 	private void saveGreenhouseStatus(GreenhouseStatus gs) {
