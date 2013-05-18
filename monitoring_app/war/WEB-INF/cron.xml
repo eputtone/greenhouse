@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cronentries>
+  <cron>
+    <url>/poll-status</url>
+    <description>Poll greenhouse sensors every 3 minutes</description>
+    <schedule>every 3 minutes</schedule>
+  </cron>
+</cronentries>
