@@ -1,6 +1,7 @@
 // Start of wireless configuration parameters ----------------------------------------
 
 #include <WiServer.h>
+#include <avr/wdt.h>
 
 #define WIRELESS_MODE_INFRA	1
 #define WIRELESS_MODE_ADHOC	2
@@ -21,7 +22,7 @@ prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 				};
 
 // WPA/WPA2 passphrase
-const prog_char security_passphrase[] PROGMEM = {"xxxxxxxx"};	// max 64 characters
+const prog_char security_passphrase[] PROGMEM = {"xxxxxxx"};	// max 64 characters
 
 // setup the wireless mode
 // infrastructure - connect to AP
@@ -33,36 +34,50 @@ unsigned char security_passphrase_len;
 
 // End of wireless configuration parameters ----------------------------------------
 
-const int PIN_MOISTURE_1 = 0;
-const int PIN_MOISTURE_2 = 1;
-const int PIN_PUMP = 4;
+const int PIN_MOISTURE_0 = A0;
+const int PIN_MOISTURE_1 = A1;
+const int PIN_MOISTURE_2 = A2;
+const int PIN_MOISTURE_3 = A3;
+const int PIN_PUMP = 5;
 const int PIN_WATER_METER = 3;
-const int PIN_RESET = 6;
+//const int PIN_RESET = 4;
+const int PIN_WATER_BUTTON = 4;
 const int PIN_LED = 7;
+const int PIN_DHT11 = 6;
 
 int idCounter = 0;
 
 unsigned long loopCounter = 0;
-const unsigned long resetInterval = 3600000;
+//const unsigned long resetInterval = 3600000;
 unsigned long currentTime = 0;
+
+const unsigned long PUMPING_ABSORPTION_DELAY = 120000;
+const unsigned long MAX_ALLOWED_PUMPING_TIME = 40000;
+const int MOISTURE_NEEDED_THRESHOLD = 700;
+const int SENSOR_DEAD_THRESHOLD = 500;
+const int TRIGGER_WATERING_SENSORS_THRESHOLD = 3;
+boolean pumpingWater = false;
+unsigned long pumpingSinceTime = 0;
+unsigned long pumpingLastTime = -PUMPING_ABSORPTION_DELAY;
 
 #include <dht11.h>
 dht11 DHT11;
-const int PIN_DHT11 = 5;
 
 void setup() {
-  pinMode(PIN_RESET, OUTPUT);
-  digitalWrite(PIN_RESET, LOW);
+  wdt_disable();
+    
+  //pinMode(PIN_RESET, OUTPUT);
+  //digitalWrite(PIN_RESET, LOW);
+  pinMode(PIN_WATER_BUTTON, INPUT);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH); 
+  pinMode(PIN_WATER_METER, INPUT);
+  digitalWrite(PIN_WATER_METER, HIGH);  
+  pinMode(PIN_PUMP, OUTPUT);    
+  digitalWrite(PIN_PUMP, LOW); 
   
   Serial.begin(57600);
   Serial.println("Init starting..."); 
-
-  pinMode(PIN_WATER_METER, INPUT);
-  pinMode(PIN_WATER_METER, HIGH);  
-  pinMode(PIN_PUMP, OUTPUT);    
-  digitalWrite(PIN_PUMP, LOW); 
   
   // Initialize WiServer and have it use the sendMyPage function to serve pages
   WiServer.init(sendMyPage);
@@ -70,34 +85,104 @@ void setup() {
   // Enable Serial output and ask WiServer to generate log messages (optional)
   WiServer.enableVerboseMode(false);
 
+  // reset by watchdog timer to guard against hang ups
+  wdt_enable(WDTO_8S);
+
   Serial.println("init done!");
 }
 
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
-  
-  if (strcmp(URL, "/") == 0) {
-    writeHttpGreenhouseDataHumanReadable();
-    return true;
-  } else if (strcmp(URL, "/greenhouse/status") == 0) {
+  String ending = String(URL);
+  if (ending.startsWith("/greenhouse/status")) {
     writeHttpGreenhouseDataJSON();
     return true;
-  } else if (strcmp(URL, "/greenhouse/counter") == 0) {
-    writeHttpResponseNumber();    
+  } else if (ending.startsWith("/greenhouse/counter")) {
+    WiServer.print(idCounter++);
+    return true;
+  } else if (ending.startsWith("/")) {
+    writeHttpGreenhouseDataHumanReadable();
     return true;
   }
   // URL not found
   return false;
 }
 
+boolean isManualWaterPumping() {
+  return digitalRead(PIN_WATER_BUTTON);
+}
+
 boolean isWaterBarrelEmpty() {
   int contact = digitalRead(PIN_WATER_METER);
-  if (contact == LOW) {
+  if (contact == HIGH) {
     return true;
   } else {
     return false;
   }
 }
+
+boolean needWatering() {
+  int sensorsBelowMoisturingThreshold = 0;
+  int moistures[4]; 
+  moistures[0] = analogRead(PIN_MOISTURE_0);
+  moistures[1] = analogRead(PIN_MOISTURE_1);
+  moistures[2] = analogRead(PIN_MOISTURE_2);
+  moistures[3] = analogRead(PIN_MOISTURE_3);
+  for (int i=0; i<4; i++) {
+    if (moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < MOISTURE_NEEDED_THRESHOLD) {
+      sensorsBelowMoisturingThreshold++;
+    }
+  }
+  return sensorsBelowMoisturingThreshold >= TRIGGER_WATERING_SENSORS_THRESHOLD;
+}
+
+void loop() {
+  wdt_reset();
+
+  // Run WiServer
+  WiServer.server_task();
+  
+  int newPumpingCmd = LOW;
+  if (isManualWaterPumping()) {
+    newPumpingCmd = HIGH;
+  } else if ((needWatering() || pumpingWater) && !isWaterBarrelEmpty()) {
+    currentTime = millis();
+    if (pumpingWater) {
+      if (pumpingSinceTime + MAX_ALLOWED_PUMPING_TIME < currentTime) {
+        newPumpingCmd = LOW;
+      } else {
+        newPumpingCmd = HIGH;
+      }
+      pumpingLastTime = currentTime;
+    } else if (pumpingLastTime + PUMPING_ABSORPTION_DELAY < currentTime) {
+      newPumpingCmd = HIGH;
+      pumpingSinceTime = currentTime;
+      pumpingLastTime = currentTime;
+    }
+  }
+  pumpingWater = newPumpingCmd;
+  digitalWrite(PIN_PUMP, newPumpingCmd);
+  
+  // reset every now and then, because wifi shield is unstable
+  // -- now using watchdog timer
+  //currentTime = millis();
+  //if (currentTime > resetInterval) {
+  //  Serial.println("RESET!");
+  //  digitalWrite(PIN_RESET, HIGH);
+  //}
+  
+  delay(10); 
+  loopCounter++;
+  if (loopCounter % 100 == 0) {
+    digitalWrite(PIN_LED, LOW);
+  } else if (loopCounter % 50 == 0) { 
+    digitalWrite(PIN_LED, HIGH); 
+  }
+}
+
+// ************************************************
+// SECTION: JSON FORMAT
+// ************************************************
 
 void writeHttpGreenhouseDataJSON() {
   float temperature = -999.99;
@@ -118,16 +203,20 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print(temperature, 2);
   WiServer.print("\",\n\t\t\"humidity\": \"");
   WiServer.print(humidity, 2);
+  WiServer.print("\",\n\t\t\"moisture0\": \"");
+  WiServer.print(analogRead(PIN_MOISTURE_0));
   WiServer.print("\",\n\t\t\"moisture1\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_1));
   WiServer.print("\",\n\t\t\"moisture2\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_2));
+  WiServer.print("\",\n\t\t\"moisture3\": \"");
+  WiServer.print(analogRead(PIN_MOISTURE_3));
   WiServer.print("\"\n\t}\n}");
 }
 
-void writeHttpResponseNumber() {
-  WiServer.print(idCounter++);
-}
+// ************************************************
+// SECTION: HTML FORMAT
+// ************************************************
 
 void writeHttpGreenhouseDataHumanReadable() {
     WiServer.print("<html>");
@@ -160,9 +249,13 @@ void writeHttpGreenhouseDataHumanReadable() {
       WiServer.print("Water: filled");
     }
     WiServer.print("<br/>");
+    WiServer.print(getMoistureValue(PIN_MOISTURE_0));
+    WiServer.print("<br/>");
     WiServer.print(getMoistureValue(PIN_MOISTURE_1));
     WiServer.print("<br/>");
     WiServer.print(getMoistureValue(PIN_MOISTURE_2));
+    WiServer.print("<br/>");
+    WiServer.print(getMoistureValue(PIN_MOISTURE_3));
     WiServer.print("<br/>");
     WiServer.print("</html>");
 }
@@ -174,42 +267,16 @@ String getMoistureValue(int pinNo) {
   // 0  ~300     dry soil
   // 300~700     humid soil
   // 700~950     in water  
+  //
+  // Probably because of the resistance in sensor wires,
+  // my moisturazion threshold is 700
 
-  if (value < 300) {
+  if (value < 700) {
     String str = "Dry soil: ";
     return str + value;
-  } else if (value < 700) {
-    String str = "Humid soil: "; 
-    return str + value;
   } else { 
-    String str = "In the water: ";
+    String str = "Moist soil: ";
     return str + value;
-  }
-}
-
-void loop() {
-  // Run WiServer
-  WiServer.server_task();
-  
-  if (isWaterBarrelEmpty()) {
-    digitalWrite(PIN_PUMP, LOW);
-  } else { 
-    digitalWrite(PIN_PUMP, HIGH);
-  }
-  
-  // reset every now and then, because wifi shield is unstable
-  currentTime = millis();
-  if (currentTime > resetInterval) {
-    Serial.println("RESET!");
-    digitalWrite(PIN_RESET, HIGH);
-  }
-  
-  delay(10); 
-  loopCounter++;
-  if (loopCounter % 100 == 0) {
-    digitalWrite(PIN_LED, LOW);
-  } else if (loopCounter % 50 == 0) { 
-    digitalWrite(PIN_LED, HIGH); 
   }
 }
 
