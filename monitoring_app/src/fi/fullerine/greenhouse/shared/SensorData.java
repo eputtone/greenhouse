@@ -7,8 +7,10 @@ public class SensorData implements Serializable {
 
 	private Double temperature;
 	private Double humidity;
+	private Integer moisture0;
 	private Integer moisture1;
 	private Integer moisture2;
+	private Integer moisture3;
 	private Boolean waterBarrelEmpty;
 	
 	public Double getTemperature() {
@@ -23,6 +25,12 @@ public class SensorData implements Serializable {
 	public void setHumidity(Double humidity) {
 		this.humidity = humidity;
 	}
+	public Integer getMoisture0() {
+		return moisture0;
+	}
+	public void setMoisture0(Integer moisture0) {
+		this.moisture0 = moisture0;
+	}	
 	public Integer getMoisture1() {
 		return moisture1;
 	}
@@ -35,6 +43,12 @@ public class SensorData implements Serializable {
 	public void setMoisture2(Integer moisture2) {
 		this.moisture2 = moisture2;
 	}
+	public Integer getMoisture3() {
+		return moisture3;
+	}
+	public void setMoisture3(Integer moisture3) {
+		this.moisture3 = moisture3;
+	}	
 	public Boolean getWaterBarrelEmpty() {
 		return waterBarrelEmpty;
 	}
