@@ -47,18 +47,23 @@ const int PIN_DHT11 = 6;
 
 int idCounter = 0;
 
+const unsigned long NO_WIFI_REQUEST_AUTOBOOT_DELAY = 600000;
+unsigned long lastWifiRequestTime = NO_WIFI_REQUEST_AUTOBOOT_DELAY;
 unsigned long loopCounter = 0;
 //const unsigned long resetInterval = 3600000;
 unsigned long currentTime = 0;
 
-const unsigned long PUMPING_ABSORPTION_DELAY = 120000;
-const unsigned long MAX_ALLOWED_PUMPING_TIME = 40000;
-const int MOISTURE_NEEDED_THRESHOLD = 700;
-const int SENSOR_DEAD_THRESHOLD = 500;
+// pump triggering and state variables
+const unsigned long PUMPING_ABSORPTION_DELAY = 120000l;
+const unsigned long MAX_ALLOWED_PUMPING_TIME = 30000l;
+const int MOISTURE_NEEDED_THRESHOLD = 600;
+const int SENSOR_DEAD_THRESHOLD = 300;
 const int TRIGGER_WATERING_SENSORS_THRESHOLD = 3;
 boolean pumpingWater = false;
-unsigned long pumpingSinceTime = 0;
+unsigned long pumpingSinceTime = 0l;
 unsigned long pumpingLastTime = -PUMPING_ABSORPTION_DELAY;
+unsigned long currentPumpingPeriod = 0l;
+unsigned long totalPumpingTime = 0l;
 
 #include <dht11.h>
 dht11 DHT11;
@@ -93,6 +98,7 @@ void setup() {
 
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
+  lastWifiRequestTime = millis();
   String ending = String(URL);
   if (ending.startsWith("/greenhouse/status")) {
     writeHttpGreenhouseDataJSON();
@@ -121,34 +127,47 @@ boolean isWaterBarrelEmpty() {
   }
 }
 
-boolean needWatering() {
-  int sensorsBelowMoisturingThreshold = 0;
+long getPumpingPeriod() {
+  int waterNeededCount = 0;
   int moistures[4]; 
+  boolean waterNeeded[4];
   moistures[0] = analogRead(PIN_MOISTURE_0);
   moistures[1] = analogRead(PIN_MOISTURE_1);
   moistures[2] = analogRead(PIN_MOISTURE_2);
   moistures[3] = analogRead(PIN_MOISTURE_3);
   for (int i=0; i<4; i++) {
-    if (moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < MOISTURE_NEEDED_THRESHOLD) {
-      sensorsBelowMoisturingThreshold++;
+    waterNeeded[i] = moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < MOISTURE_NEEDED_THRESHOLD;
+    if (waterNeeded[i]) {
+      waterNeededCount++;  
     }
   }
-  return sensorsBelowMoisturingThreshold >= TRIGGER_WATERING_SENSORS_THRESHOLD;
+  if (waterNeededCount >= TRIGGER_WATERING_SENSORS_THRESHOLD) {
+    return MAX_ALLOWED_PUMPING_TIME;
+  }
+  // These pots need water more often (no water container),
+  // and short watering period reaches only these pots.
+  if (waterNeeded[1] && waterNeeded[3]) {
+    return MAX_ALLOWED_PUMPING_TIME / 2;
+  }
+  return 0l;
 }
 
 void loop() {
-  wdt_reset();
-
+  currentTime = millis();
+  if (lastWifiRequestTime + NO_WIFI_REQUEST_AUTOBOOT_DELAY > currentTime) {
+    wdt_reset();
+  }
+  
   // Run WiServer
   WiServer.server_task();
   
   int newPumpingCmd = LOW;
+  long reqPumpingPeriod = getPumpingPeriod();
   if (isManualWaterPumping()) {
     newPumpingCmd = HIGH;
-  } else if ((needWatering() || pumpingWater) && !isWaterBarrelEmpty()) {
-    currentTime = millis();
+  } else if ((reqPumpingPeriod > 0l || pumpingWater) && !isWaterBarrelEmpty()) {
     if (pumpingWater) {
-      if (pumpingSinceTime + MAX_ALLOWED_PUMPING_TIME < currentTime) {
+      if (pumpingSinceTime + currentPumpingPeriod < currentTime) {
         newPumpingCmd = LOW;
       } else {
         newPumpingCmd = HIGH;
@@ -156,8 +175,10 @@ void loop() {
       pumpingLastTime = currentTime;
     } else if (pumpingLastTime + PUMPING_ABSORPTION_DELAY < currentTime) {
       newPumpingCmd = HIGH;
+      currentPumpingPeriod = reqPumpingPeriod;
       pumpingSinceTime = currentTime;
       pumpingLastTime = currentTime;
+      totalPumpingTime += reqPumpingPeriod;
     }
   }
   pumpingWater = newPumpingCmd;
@@ -203,6 +224,9 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print(temperature, 2);
   WiServer.print("\",\n\t\t\"humidity\": \"");
   WiServer.print(humidity, 2);
+  WiServer.print(",\n\t\t\"totalPumpingTime\": \"");
+  WiServer.print(totalPumpingTime
+  );  
   WiServer.print("\",\n\t\t\"moisture0\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_0));
   WiServer.print("\",\n\t\t\"moisture1\": \"");
