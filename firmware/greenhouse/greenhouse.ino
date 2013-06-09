@@ -50,13 +50,10 @@ const unsigned long NO_WIFI_REQUEST_AUTOBOOT_DELAY = 600000;
 unsigned long lastWifiRequestTime = NO_WIFI_REQUEST_AUTOBOOT_DELAY;
 unsigned long loopCounter = 0;
 unsigned long currentTime = 0;
-String urlEnding;
-String urlParameterName;
-String urlParameterValue;
 
 #define CMD_MOISTURE_LIMIT_COLD "moistureLimitCold"
 #define CMD_MOISTURE_LIMIT_HOT "moistureLimitHot"
-#define CMD_TEMPERATURE_LIMIT "tempLimit"
+#define CMD_TEMPERATURE_LIMIT "temperatureLimit"
 
 #define URL_STATUS "/greenhouse/status"
 #define URL_COUNTER "/greenhouse/counter"
@@ -112,55 +109,65 @@ void setup() {
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
   lastWifiRequestTime = millis();
-  urlEnding = String(URL);
-  if (urlEnding.startsWith(URL_STATUS)) {
+  if (prefix(URL_STATUS, URL)) {
     writeHttpGreenhouseDataJSON();
     return true;
-  } else if (urlEnding.startsWith(URL_COUNTER)) {
+  } else if (prefix(URL_COUNTER, URL)) {
     WiServer.print(idCounter++);
     return true;
-  } else if (urlEnding.startsWith(URL_CONTROL)) {
-    setParameterValues();
+  } else if (prefix(URL_CONTROL, URL)) {
+    setParameterValues(URL);
     return true;
   } 
   // URL not found
   return false;
 }
 
-void setParameterValues() {
-  parseParameterValue(CMD_MOISTURE_LIMIT_COLD);
-  if (urlParameterValue != NULL) {
-    MOISTURE_NEEDED_THRESHOLD_COLD = urlParameterValue.toInt();
+bool prefix(const char* pre, const char* source)
+{
+  return strncmp(pre, source, strlen(pre)) == 0;
+}
+
+void setParameterValues(char* URL) {
+  int value = parseParameterValue(URL, CMD_MOISTURE_LIMIT_COLD);
+  if (value > -1 && value < 1000) {
+    MOISTURE_NEEDED_THRESHOLD_COLD = value;
   }    
-  parseParameterValue(CMD_MOISTURE_LIMIT_HOT);
-  if (urlParameterValue != NULL) {
-    MOISTURE_NEEDED_THRESHOLD_HOT = urlParameterValue.toInt();
+  value = parseParameterValue(URL, CMD_MOISTURE_LIMIT_HOT);
+  if (value > -1 && value < 1000) {
+    MOISTURE_NEEDED_THRESHOLD_HOT = value;
   }
-  parseParameterValue(CMD_TEMPERATURE_LIMIT);
-  if (urlParameterValue != NULL) {
-    TEMPERATURE_THRESHOLD = urlParameterValue.toInt();
+  value = parseParameterValue(URL, CMD_TEMPERATURE_LIMIT);
+  if (value > -100 && value < 100) {
+    TEMPERATURE_THRESHOLD = value;
   } 
   WiServer.print("DONE");  
 }
 
-void parseParameterValue(char* parameterName) {
-  urlParameterName = String(parameterName);
-  int startIndex = urlEnding.indexOf(parameterName);
-  if (startIndex < 0) {
-    urlParameterValue = NULL;
-    return;
+int parseParameterValue(char* URL, char* parameterName) {
+  int ret = -100;
+  char* startIndex = strstr(URL, parameterName);
+  if (startIndex == NULL) {
+    return ret;
   }
-  startIndex += urlParameterName.length() + 1;
-  int endIndex = urlEnding.indexOf("&", startIndex);
-  if (endIndex > -1) {
-    urlParameterValue = urlEnding.substring(startIndex, endIndex);
-  } else {
-    urlParameterValue = urlEnding.substring(startIndex);
+  startIndex += strlen(parameterName) + 1;
+  char subbuff[4];
+  for (int i=0; i<4; i++) {
+    if (isdigit(startIndex[i]) && i<3) {
+      subbuff[i] = startIndex[i];
+    } else {
+      subbuff[i] = '\0';
+      break;
+    }
   }
-  WiServer.print(urlParameterName);
+  WiServer.print(parameterName);
   WiServer.print("=");
-  WiServer.print(urlParameterValue);
+  WiServer.print(subbuff);
   WiServer.print("\n");
+  if (subbuff[0] != '\0') {
+    ret = atoi(subbuff);
+  }
+  return ret;
 }
 
 boolean isManualWaterPumping() {
@@ -187,9 +194,9 @@ long getPumpingPeriod() {
   int moistures[4]; 
   boolean waterNeeded[4];
   int moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_COLD;
-  /*if (TEMPERATURE_THRESHOLD < ((int)currentTemperature)) {
+  if (TEMPERATURE_THRESHOLD < ((int)currentTemperature)) {
     moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_HOT;
-  }*/
+  }
   moistures[0] = analogRead(PIN_MOISTURE_0);
   moistures[1] = analogRead(PIN_MOISTURE_1);
   moistures[2] = analogRead(PIN_MOISTURE_2);
@@ -262,33 +269,33 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print("{\n");
   WiServer.print("\t\"id\": \"");
   WiServer.print(idCounter++);
-  WiServer.print("\",\n\t\"metrics\":");
-  WiServer.print("{\n\t\t\"tPump\": \"");
+  WiServer.print("\",\n\t\"operatingMetrics\":");
+  WiServer.print("{\n\t\t\"pumpingTime\": \"");
   WiServer.print(totalPumpingTime);    
   WiServer.print("\",\n\t\t\"uptime\": \"");
   WiServer.print(currentTime);      
-  WiServer.print("\"\n\t}\n\t\"params\":");
-  WiServer.print("{\n\t\t\"mLims\":"); 
+  WiServer.print("\"\n\t},\n\t\"operatingParameters\":");
+  WiServer.print("{\n\t\t\"moistureLimits\":"); 
   WiServer.print("{\n\t\t\t\"cold\": \"");  
   WiServer.print(MOISTURE_NEEDED_THRESHOLD_COLD);
   WiServer.print("\",\n\t\t\t\"hot\": \"");
   WiServer.print(MOISTURE_NEEDED_THRESHOLD_HOT);
-  WiServer.print("\"\n\t\t},\n\t\t\"tLim\": \"");
+  WiServer.print("\"\n\t\t},\n\t\t\"temperatureLimit\": \"");
   WiServer.print(TEMPERATURE_THRESHOLD);
-  WiServer.print("\"\n\t}\n\t\"sensors\": ");
+  WiServer.print("\"\n\t},\n\t\"sensors\": ");
   WiServer.print("{\n\t\t\"addWater\": "); 
-  WiServer.print(isWaterBarrelEmpty()?"1":"0");
-  WiServer.print(",\n\t\t\"temp\": \"");
+  WiServer.print(isWaterBarrelEmpty()?"true":"false");
+  WiServer.print(",\n\t\t\"temperature\": \"");
   WiServer.print(currentTemperature, 2);
-  WiServer.print("\",\n\t\t\"hum\": \"");
+  WiServer.print("\",\n\t\t\"humidity\": \"");
   WiServer.print(currentHumidity, 2);
-  WiServer.print("\",\n\t\t\"m0\": \"");
+  WiServer.print("\",\n\t\t\"moisture0\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_0));
-  WiServer.print("\",\n\t\t\"m1\": \"");
+  WiServer.print("\",\n\t\t\"moisture1\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_1));
-  WiServer.print("\",\n\t\t\"m2\": \"");
+  WiServer.print("\",\n\t\t\"moisture2\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_2));
-  WiServer.print("\",\n\t\t\"m3\": \"");
+  WiServer.print("\",\n\t\t\"moisture3\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_3));
   WiServer.print("\"\n\t}\n}");
 }
