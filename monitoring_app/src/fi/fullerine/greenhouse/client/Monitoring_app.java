@@ -85,8 +85,8 @@ public class Monitoring_app implements EntryPoint {
 	}
 
 	private void populateTable(GreenhouseStatus gs) {
-		SensorData sh = gs.getSensorData();
-		sensorDataTable.setText(1, 1, String.valueOf(sh.getWaterBarrelEmpty()));
+		SensorData sh = gs.getSensors();
+		sensorDataTable.setText(1, 1, String.valueOf(sh.getAddWater()));
 		sensorDataTable.setText(2, 1, String.valueOf(sh.getTemperature()));
 		sensorDataTable.setText(3, 1, String.valueOf(sh.getHumidity()));
 		sensorDataTable.setText(4, 1, String.valueOf(sh.getMoisture1()));

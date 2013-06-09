@@ -14,6 +14,8 @@ import com.google.appengine.api.datastore.DatastoreServiceFactory;
 import com.google.appengine.api.datastore.Entity;
 
 import fi.fullerine.greenhouse.shared.GreenhouseStatus;
+import fi.fullerine.greenhouse.shared.OperatingMetrics;
+import fi.fullerine.greenhouse.shared.OperatingParameters;
 import fi.fullerine.greenhouse.shared.SensorData;
 
 /**
@@ -27,20 +29,6 @@ public class GreenhouseStatusPollerServlet extends HttpServlet {
 	@Override
 	protected void doGet(HttpServletRequest req, HttpServletResponse resp)
 			throws ServletException, IOException {
-/*		thread = ThreadManager.createBackgroundThread(new Runnable() {
-			public void run() {
-				try {
-					while (true) {
-						GreenhouseStatus gs = util.pollGreenhouseStatus();
-						saveGreenhouseStatus(gs);
-						Thread.sleep(600000);
-					}
-				} catch (InterruptedException ex) {
-					throw new RuntimeException("Interrupted in loop:", ex);
-				}
-			}
-		});
-		thread.start();*/
 		GreenhouseStatus gs = util.pollGreenhouseStatus();
 		saveGreenhouseStatus(gs);		
 	}
@@ -48,17 +36,28 @@ public class GreenhouseStatusPollerServlet extends HttpServlet {
 	private void saveGreenhouseStatus(GreenhouseStatus gs) {
 		DatastoreService datastore = DatastoreServiceFactory
 				.getDatastoreService();
-		Entity e = new Entity("GreenhouseStatus");
+		Entity e = new Entity("GreenhouseHistory");
 		e.setProperty("date", new Date());
 		e.setProperty("id", gs.getId());
 
-		SensorData sd = gs.getSensorData();
+		OperatingMetrics metrics = gs.getOperatingMetrics();
+		e.setProperty("uptime", metrics.getUptime());
+		e.setProperty("pumpingTime", metrics.getPumpingTime());
+		
+		OperatingParameters parameters = gs.getOperatingParameters();
+		e.setProperty("moistureLimitCold", parameters.getMoistureLimits().getCold());
+		e.setProperty("moistureLimitHot", parameters.getMoistureLimits().getHot());
+		e.setProperty("temperatureLimit", parameters.getTemperatureLimit());
+		
+		SensorData sd = gs.getSensors();
 		e.setProperty("humidity", sd.getHumidity());
 		e.setProperty("temperature", sd.getTemperature());
 		e.setProperty("moisture0", sd.getMoisture0());
 		e.setProperty("moisture1", sd.getMoisture1());
 		e.setProperty("moisture2", sd.getMoisture2());
 		e.setProperty("moisture3", sd.getMoisture2());
+		e.setProperty("addWater", sd.getAddWater());
+
 		datastore.put(e);
 	}
 

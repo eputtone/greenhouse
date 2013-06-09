@@ -7,7 +7,9 @@ public class GreenhouseStatus implements Serializable {
 	private static final long serialVersionUID = 1L;
 	
 	private Integer id;
-	private SensorData sensorData;
+	private SensorData sensors;
+	private OperatingMetrics operatingMetrics;
+	private OperatingParameters operatingParameters;
 	
 	public Integer getId() {
 		return id;
@@ -15,11 +17,24 @@ public class GreenhouseStatus implements Serializable {
 	public void setId(Integer id) {
 		this.id = id;
 	}
-	public SensorData getSensorData() {
-		return sensorData;
+	public SensorData getSensors() {
+		return sensors;
 	}
-	public void setSensorData(SensorData sensorData) {
-		this.sensorData = sensorData;
+	public void setSensors(SensorData sensors) {
+		this.sensors = sensors;
+	}
+	public OperatingMetrics getOperatingMetrics() {
+		return operatingMetrics;
+	}
+	public void setOperatingMetrics(OperatingMetrics operatingMetrics) {
+		this.operatingMetrics = operatingMetrics;
+	}
+	public OperatingParameters getOperatingParameters() {
+		return operatingParameters;
+	}
+	public void setOperatingParameters(OperatingParameters operatingParameters) {
+		this.operatingParameters = operatingParameters;
 	}
 	
 }
+
