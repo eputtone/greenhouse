@@ -22,7 +22,7 @@ prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 				};
 
 // WPA/WPA2 passphrase
-const prog_char security_passphrase[] PROGMEM = {"xxxxxxx"};	// max 64 characters
+const prog_char security_passphrase[] PROGMEM = {"xxxxxxxxxx"};	// max 64 characters
 
 // setup the wireless mode
 // infrastructure - connect to AP
@@ -40,7 +40,6 @@ const int PIN_MOISTURE_2 = A2;
 const int PIN_MOISTURE_3 = A3;
 const int PIN_PUMP = 5;
 const int PIN_WATER_METER = 3;
-//const int PIN_RESET = 4;
 const int PIN_WATER_BUTTON = 4;
 const int PIN_LED = 7;
 const int PIN_DHT11 = 6;
@@ -50,20 +49,34 @@ int idCounter = 0;
 const unsigned long NO_WIFI_REQUEST_AUTOBOOT_DELAY = 600000;
 unsigned long lastWifiRequestTime = NO_WIFI_REQUEST_AUTOBOOT_DELAY;
 unsigned long loopCounter = 0;
-//const unsigned long resetInterval = 3600000;
 unsigned long currentTime = 0;
+String urlEnding;
+String urlParameterName;
+String urlParameterValue;
+
+#define CMD_MOISTURE_LIMIT_COLD "moistureLimitCold"
+#define CMD_MOISTURE_LIMIT_HOT "moistureLimitHot"
+#define CMD_TEMPERATURE_LIMIT "tempLimit"
+
+#define URL_STATUS "/greenhouse/status"
+#define URL_COUNTER "/greenhouse/counter"
+#define URL_CONTROL "/greenhouse/control"
 
 // pump triggering and state variables
 const unsigned long PUMPING_ABSORPTION_DELAY = 120000l;
 const unsigned long MAX_ALLOWED_PUMPING_TIME = 30000l;
-const int MOISTURE_NEEDED_THRESHOLD = 600;
+int MOISTURE_NEEDED_THRESHOLD_COLD = 600;
+int MOISTURE_NEEDED_THRESHOLD_HOT = 650;
 const int SENSOR_DEAD_THRESHOLD = 300;
 const int TRIGGER_WATERING_SENSORS_THRESHOLD = 3;
+int TEMPERATURE_THRESHOLD = 30;
 boolean pumpingWater = false;
 unsigned long pumpingSinceTime = 0l;
 unsigned long pumpingLastTime = -PUMPING_ABSORPTION_DELAY;
 unsigned long currentPumpingPeriod = 0l;
 unsigned long totalPumpingTime = 0l;
+float currentTemperature = -999.99;
+float currentHumidity = -999.99;
 
 #include <dht11.h>
 dht11 DHT11;
@@ -99,19 +112,55 @@ void setup() {
 // This is our page serving function that generates web pages
 boolean sendMyPage(char* URL) {
   lastWifiRequestTime = millis();
-  String ending = String(URL);
-  if (ending.startsWith("/greenhouse/status")) {
+  urlEnding = String(URL);
+  if (urlEnding.startsWith(URL_STATUS)) {
     writeHttpGreenhouseDataJSON();
     return true;
-  } else if (ending.startsWith("/greenhouse/counter")) {
+  } else if (urlEnding.startsWith(URL_COUNTER)) {
     WiServer.print(idCounter++);
     return true;
-  } else if (ending.startsWith("/")) {
-    writeHttpGreenhouseDataHumanReadable();
+  } else if (urlEnding.startsWith(URL_CONTROL)) {
+    setParameterValues();
     return true;
-  }
+  } 
   // URL not found
   return false;
+}
+
+void setParameterValues() {
+  parseParameterValue(CMD_MOISTURE_LIMIT_COLD);
+  if (urlParameterValue != NULL) {
+    MOISTURE_NEEDED_THRESHOLD_COLD = urlParameterValue.toInt();
+  }    
+  parseParameterValue(CMD_MOISTURE_LIMIT_HOT);
+  if (urlParameterValue != NULL) {
+    MOISTURE_NEEDED_THRESHOLD_HOT = urlParameterValue.toInt();
+  }
+  parseParameterValue(CMD_TEMPERATURE_LIMIT);
+  if (urlParameterValue != NULL) {
+    TEMPERATURE_THRESHOLD = urlParameterValue.toInt();
+  } 
+  WiServer.print("DONE");  
+}
+
+void parseParameterValue(char* parameterName) {
+  urlParameterName = String(parameterName);
+  int startIndex = urlEnding.indexOf(parameterName);
+  if (startIndex < 0) {
+    urlParameterValue = NULL;
+    return;
+  }
+  startIndex += urlParameterName.length() + 1;
+  int endIndex = urlEnding.indexOf("&", startIndex);
+  if (endIndex > -1) {
+    urlParameterValue = urlEnding.substring(startIndex, endIndex);
+  } else {
+    urlParameterValue = urlEnding.substring(startIndex);
+  }
+  WiServer.print(urlParameterName);
+  WiServer.print("=");
+  WiServer.print(urlParameterValue);
+  WiServer.print("\n");
 }
 
 boolean isManualWaterPumping() {
@@ -119,11 +168,17 @@ boolean isManualWaterPumping() {
 }
 
 boolean isWaterBarrelEmpty() {
-  int contact = digitalRead(PIN_WATER_METER);
-  if (contact == HIGH) {
+  if (digitalRead(PIN_WATER_METER) == HIGH) {
     return true;
   } else {
     return false;
+  }
+}
+
+void readTemperature() {
+  if (DHT11.read(PIN_DHT11) == DHTLIB_OK) {
+    currentTemperature = (float)DHT11.temperature;
+    currentHumidity = (float)DHT11.humidity;
   }
 }
 
@@ -131,12 +186,16 @@ long getPumpingPeriod() {
   int waterNeededCount = 0;
   int moistures[4]; 
   boolean waterNeeded[4];
+  int moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_COLD;
+  /*if (TEMPERATURE_THRESHOLD < ((int)currentTemperature)) {
+    moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_HOT;
+  }*/
   moistures[0] = analogRead(PIN_MOISTURE_0);
   moistures[1] = analogRead(PIN_MOISTURE_1);
   moistures[2] = analogRead(PIN_MOISTURE_2);
   moistures[3] = analogRead(PIN_MOISTURE_3);
   for (int i=0; i<4; i++) {
-    waterNeeded[i] = moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < MOISTURE_NEEDED_THRESHOLD;
+    waterNeeded[i] = moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < moistureNeededThreshold;
     if (waterNeeded[i]) {
       waterNeededCount++;  
     }
@@ -157,9 +216,11 @@ void loop() {
   if (lastWifiRequestTime + NO_WIFI_REQUEST_AUTOBOOT_DELAY > currentTime) {
     wdt_reset();
   }
-  
-  // Run WiServer
   WiServer.server_task();
+  
+  if (loopCounter % 100000 == 0) {
+    readTemperature();
+  }
   
   int newPumpingCmd = LOW;
   long reqPumpingPeriod = getPumpingPeriod();
@@ -184,14 +245,6 @@ void loop() {
   pumpingWater = newPumpingCmd;
   digitalWrite(PIN_PUMP, newPumpingCmd);
   
-  // reset every now and then, because wifi shield is unstable
-  // -- now using watchdog timer
-  //currentTime = millis();
-  //if (currentTime > resetInterval) {
-  //  Serial.println("RESET!");
-  //  digitalWrite(PIN_RESET, HIGH);
-  //}
-  
   delay(10); 
   loopCounter++;
   if (loopCounter % 100 == 0) {
@@ -206,103 +259,37 @@ void loop() {
 // ************************************************
 
 void writeHttpGreenhouseDataJSON() {
-  float temperature = -999.99;
-  float humidity = -999.99;
-  int chk = DHT11.read(PIN_DHT11);
-  switch (chk) {  
-    case DHTLIB_OK: 
-      humidity = (float)DHT11.humidity;
-      temperature = (float)DHT11.temperature;
-      break;
-  }
   WiServer.print("{\n");
   WiServer.print("\t\"id\": \"");
   WiServer.print(idCounter++);
-  WiServer.print("\",\n\t\"sensorData\": {\n\t\t\"waterBarrelEmpty\": ");  
-  WiServer.print(isWaterBarrelEmpty()?"true":"false");
-  WiServer.print(",\n\t\t\"temperature\": \"");
-  WiServer.print(temperature, 2);
-  WiServer.print("\",\n\t\t\"humidity\": \"");
-  WiServer.print(humidity, 2);
-  WiServer.print(",\n\t\t\"totalPumpingTime\": \"");
-  WiServer.print(totalPumpingTime
-  );  
-  WiServer.print("\",\n\t\t\"moisture0\": \"");
+  WiServer.print("\",\n\t\"metrics\":");
+  WiServer.print("{\n\t\t\"tPump\": \"");
+  WiServer.print(totalPumpingTime);    
+  WiServer.print("\",\n\t\t\"uptime\": \"");
+  WiServer.print(currentTime);      
+  WiServer.print("\"\n\t}\n\t\"params\":");
+  WiServer.print("{\n\t\t\"mLims\":"); 
+  WiServer.print("{\n\t\t\t\"cold\": \"");  
+  WiServer.print(MOISTURE_NEEDED_THRESHOLD_COLD);
+  WiServer.print("\",\n\t\t\t\"hot\": \"");
+  WiServer.print(MOISTURE_NEEDED_THRESHOLD_HOT);
+  WiServer.print("\"\n\t\t},\n\t\t\"tLim\": \"");
+  WiServer.print(TEMPERATURE_THRESHOLD);
+  WiServer.print("\"\n\t}\n\t\"sensors\": ");
+  WiServer.print("{\n\t\t\"addWater\": "); 
+  WiServer.print(isWaterBarrelEmpty()?"1":"0");
+  WiServer.print(",\n\t\t\"temp\": \"");
+  WiServer.print(currentTemperature, 2);
+  WiServer.print("\",\n\t\t\"hum\": \"");
+  WiServer.print(currentHumidity, 2);
+  WiServer.print("\",\n\t\t\"m0\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_0));
-  WiServer.print("\",\n\t\t\"moisture1\": \"");
+  WiServer.print("\",\n\t\t\"m1\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_1));
-  WiServer.print("\",\n\t\t\"moisture2\": \"");
+  WiServer.print("\",\n\t\t\"m2\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_2));
-  WiServer.print("\",\n\t\t\"moisture3\": \"");
+  WiServer.print("\",\n\t\t\"m3\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_3));
   WiServer.print("\"\n\t}\n}");
 }
-
-// ************************************************
-// SECTION: HTML FORMAT
-// ************************************************
-
-void writeHttpGreenhouseDataHumanReadable() {
-    WiServer.print("<html>");
-
-    int chk = DHT11.read(PIN_DHT11);
-    switch (chk) {  
-      case DHTLIB_OK: 
-        WiServer.println("OK"); 
-        break;
-      case DHTLIB_ERROR_CHECKSUM: 
-        WiServer.println("Checksum error"); 
-        break;
-      case DHTLIB_ERROR_TIMEOUT: 
-        WiServer.println("Time out error"); 
-        break;
-      default: 
-        WiServer.println("Unknown error"); 
-        break;
-    }
-    WiServer.print("Humidity (%): ");
-    WiServer.print((float)DHT11.humidity, 2);
-    WiServer.print("<br/>");
-    WiServer.print("Temperature (oC): ");
-    WiServer.print((float)DHT11.temperature, 2);    
-    WiServer.print("<br/>");
-    
-    if (isWaterBarrelEmpty()) {
-      WiServer.print("Water: empty");
-    } else {
-      WiServer.print("Water: filled");
-    }
-    WiServer.print("<br/>");
-    WiServer.print(getMoistureValue(PIN_MOISTURE_0));
-    WiServer.print("<br/>");
-    WiServer.print(getMoistureValue(PIN_MOISTURE_1));
-    WiServer.print("<br/>");
-    WiServer.print(getMoistureValue(PIN_MOISTURE_2));
-    WiServer.print("<br/>");
-    WiServer.print(getMoistureValue(PIN_MOISTURE_3));
-    WiServer.print("<br/>");
-    WiServer.print("</html>");
-}
-
-String getMoistureValue(int pinNo) {
-  int value = analogRead(pinNo);
-
-  // the sensor value description
-  // 0  ~300     dry soil
-  // 300~700     humid soil
-  // 700~950     in water  
-  //
-  // Probably because of the resistance in sensor wires,
-  // my moisturazion threshold is 700
-
-  if (value < 700) {
-    String str = "Dry soil: ";
-    return str + value;
-  } else { 
-    String str = "Moist soil: ";
-    return str + value;
-  }
-}
-
-
 

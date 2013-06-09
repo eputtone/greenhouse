@@ -55,7 +55,7 @@ public class GreenhouseStatusPollerServlet extends HttpServlet {
 		SensorData sd = gs.getSensorData();
 		e.setProperty("humidity", sd.getHumidity());
 		e.setProperty("temperature", sd.getTemperature());
-		e.setProperty("moisture0", sd.getMoisture1());
+		e.setProperty("moisture0", sd.getMoisture0());
 		e.setProperty("moisture1", sd.getMoisture1());
 		e.setProperty("moisture2", sd.getMoisture2());
 		e.setProperty("moisture3", sd.getMoisture2());
