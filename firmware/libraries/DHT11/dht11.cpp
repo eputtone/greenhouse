@@ -44,24 +44,24 @@ int dht11::read(int pin)
 	pinMode(pin, INPUT);
 
 	// ACKNOWLEDGE or TIMEOUT
-	unsigned int loopCnt = 10000;
+	unsigned int loopCnt = 1000;
 	while(digitalRead(pin) == LOW)
 		if (loopCnt-- == 0) return DHTLIB_ERROR_TIMEOUT;
 
-	loopCnt = 10000;
+	loopCnt = 1000;
 	while(digitalRead(pin) == HIGH)
 		if (loopCnt-- == 0) return DHTLIB_ERROR_TIMEOUT;
 
 	// READ OUTPUT - 40 BITS => 5 BYTES or TIMEOUT
 	for (int i=0; i<40; i++)
 	{
-		loopCnt = 10000;
+		loopCnt = 1000;
 		while(digitalRead(pin) == LOW)
 			if (loopCnt-- == 0) return DHTLIB_ERROR_TIMEOUT;
 
 		unsigned long t = micros();
 
-		loopCnt = 10000;
+		loopCnt = 1000;
 		while(digitalRead(pin) == HIGH)
 			if (loopCnt-- == 0) return DHTLIB_ERROR_TIMEOUT;
 
