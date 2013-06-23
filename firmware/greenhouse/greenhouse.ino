@@ -34,10 +34,11 @@ unsigned char security_passphrase_len;
 
 // End of wireless configuration parameters ----------------------------------------
 
+#include <EEPROM.h>
+
 const int PIN_MOISTURE_0 = A0;
 const int PIN_MOISTURE_1 = A1;
 const int PIN_MOISTURE_2 = A2;
-const int PIN_MOISTURE_3 = A3;
 const int PIN_PUMP = 5;
 const int PIN_WATER_METER = 3;
 const int PIN_WATER_BUTTON = 4;
@@ -55,18 +56,27 @@ unsigned long currentTime = 0;
 #define CMD_MOISTURE_LIMIT_HOT "moistureLimitHot"
 #define CMD_TEMPERATURE_LIMIT "temperatureLimit"
 
+#define ADDR_MOISTURE_LIMIT_COLD 0
+#define ADDR_MOISTURE_LIMIT_HOT 2
+#define ADDR_TEMPERATURE_LIMIT 4
+
 #define URL_STATUS "/greenhouse/status"
 #define URL_COUNTER "/greenhouse/counter"
 #define URL_CONTROL "/greenhouse/control"
 
-// pump triggering and state variables
-const unsigned long PUMPING_ABSORPTION_DELAY = 120000l;
-const unsigned long MAX_ALLOWED_PUMPING_TIME = 30000l;
-int MOISTURE_NEEDED_THRESHOLD_COLD = 600;
-int MOISTURE_NEEDED_THRESHOLD_HOT = 650;
-const int SENSOR_DEAD_THRESHOLD = 300;
-const int TRIGGER_WATERING_SENSORS_THRESHOLD = 3;
-int TEMPERATURE_THRESHOLD = 30;
+#define MOISTURE_SENSOR_COUNT 3
+#define MOISTURE_IN_WATER_THRESHOLD 700
+
+// pump triggering and state variables 
+const unsigned long PUMPING_ABSORPTION_DELAY = 600000l;
+const unsigned long DRY_PUMPING_TIME = 30000l;
+const unsigned long TIMED_PUMPING_TIME = 60000l;
+const unsigned long TIMED_PUMPING_DELAY = 3600000l;
+const int SENSOR_DEAD_THRESHOLD = 100;
+
+unsigned int moistureNeededThresholdCold = 600;
+unsigned int moistureNeededThresholdHot = 650;
+unsigned int temperatureThreshold = 30;
 boolean pumpingWater = false;
 unsigned long pumpingSinceTime = 0l;
 unsigned long pumpingLastTime = -PUMPING_ABSORPTION_DELAY;
@@ -80,7 +90,11 @@ dht11 DHT11;
 
 void setup() {
   wdt_disable();
-    
+  
+  moistureNeededThresholdCold = EEPROMReadInt(ADDR_MOISTURE_LIMIT_COLD);
+  moistureNeededThresholdHot = EEPROMReadInt(ADDR_MOISTURE_LIMIT_HOT);
+  temperatureThreshold = EEPROMReadInt(ADDR_TEMPERATURE_LIMIT);      
+      
   //pinMode(PIN_RESET, OUTPUT);
   //digitalWrite(PIN_RESET, LOW);
   pinMode(PIN_WATER_BUTTON, INPUT);
@@ -123,29 +137,31 @@ boolean sendMyPage(char* URL) {
   return false;
 }
 
-bool prefix(const char* pre, const char* source)
-{
+bool prefix(const char* pre, const char* source) {
   return strncmp(pre, source, strlen(pre)) == 0;
 }
 
 void setParameterValues(char* URL) {
-  int value = parseParameterValue(URL, CMD_MOISTURE_LIMIT_COLD);
-  if (value > -1 && value < 1000) {
-    MOISTURE_NEEDED_THRESHOLD_COLD = value;
+  unsigned int value = parseParameterValue(URL, CMD_MOISTURE_LIMIT_COLD);
+  if (value > 0 && value < 1000) {
+    moistureNeededThresholdCold = value;
+    EEPROMWriteInt(ADDR_MOISTURE_LIMIT_COLD, value);
   }    
   value = parseParameterValue(URL, CMD_MOISTURE_LIMIT_HOT);
-  if (value > -1 && value < 1000) {
-    MOISTURE_NEEDED_THRESHOLD_HOT = value;
+  if (value > 0 && value < 1000) {
+    moistureNeededThresholdHot = value;
+    EEPROMWriteInt(ADDR_MOISTURE_LIMIT_HOT, value);
   }
   value = parseParameterValue(URL, CMD_TEMPERATURE_LIMIT);
-  if (value > -100 && value < 100) {
-    TEMPERATURE_THRESHOLD = value;
+  if (value > 0 && value < 100) {
+    temperatureThreshold = value;
+    EEPROMWriteInt(ADDR_TEMPERATURE_LIMIT, value);    
   } 
   WiServer.print("DONE");  
 }
 
-int parseParameterValue(char* URL, char* parameterName) {
-  int ret = -100;
+unsigned int parseParameterValue(char* URL, char* parameterName) {
+  unsigned int ret = 0;
   char* startIndex = strstr(URL, parameterName);
   if (startIndex == NULL) {
     return ret;
@@ -160,14 +176,27 @@ int parseParameterValue(char* URL, char* parameterName) {
       break;
     }
   }
-  WiServer.print(parameterName);
-  WiServer.print("=");
-  WiServer.print(subbuff);
-  WiServer.print("\n");
   if (subbuff[0] != '\0') {
     ret = atoi(subbuff);
   }
+  WiServer.print(parameterName);
+  WiServer.print("=");
+  WiServer.print(ret);
+  WiServer.print("\n");  
   return ret;
+}
+
+void EEPROMWriteInt(int p_address, int p_value) {
+  byte lowByte = ((p_value >> 0) & 0xFF);
+  byte highByte = ((p_value >> 8) & 0xFF);
+  EEPROM.write(p_address, lowByte);
+  EEPROM.write(p_address + 1, highByte);
+}
+
+unsigned int EEPROMReadInt(int p_address) {
+  byte lowByte = EEPROM.read(p_address);
+  byte highByte = EEPROM.read(p_address + 1);
+  return ((lowByte << 0) & 0xFF) + ((highByte << 8) & 0xFF00);
 }
 
 boolean isManualWaterPumping() {
@@ -190,31 +219,36 @@ void readTemperature() {
 }
 
 long getPumpingPeriod() {
-  int waterNeededCount = 0;
-  int moistures[4]; 
-  boolean waterNeeded[4];
-  int moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_COLD;
-  if (TEMPERATURE_THRESHOLD < ((int)currentTemperature)) {
-    moistureNeededThreshold = MOISTURE_NEEDED_THRESHOLD_HOT;
+  if (isWaterBarrelEmpty()) {
+    return 0l;
   }
-  moistures[0] = analogRead(PIN_MOISTURE_0);
-  moistures[1] = analogRead(PIN_MOISTURE_1);
-  moistures[2] = analogRead(PIN_MOISTURE_2);
-  moistures[3] = analogRead(PIN_MOISTURE_3);
-  for (int i=0; i<4; i++) {
-    waterNeeded[i] = moistures[i] > SENSOR_DEAD_THRESHOLD && moistures[i] < moistureNeededThreshold;
-    if (waterNeeded[i]) {
-      waterNeededCount++;  
+  int waterNeededCount = 0;  
+  int sensorsAlive = 0;
+  unsigned int moistures[MOISTURE_SENSOR_COUNT]; 
+  unsigned int moistureNeededThreshold = moistureNeededThresholdCold;
+  if (temperatureThreshold < ((unsigned int)currentTemperature)) {
+    moistureNeededThreshold = moistureNeededThresholdHot;
+  }
+  moistures[0] = (unsigned int)analogRead(PIN_MOISTURE_0);
+  moistures[1] = (unsigned int)analogRead(PIN_MOISTURE_1);
+  moistures[2] = (unsigned int)analogRead(PIN_MOISTURE_2);
+  for (int i=0; i<MOISTURE_SENSOR_COUNT; i++) {
+    if (moistures[i] > SENSOR_DEAD_THRESHOLD) {
+      if (moistures[i] < moistureNeededThreshold) {
+        waterNeededCount++;  
+      }
+      if (moistures[i] > MOISTURE_IN_WATER_THRESHOLD) {
+        return 0l;
+      }
+      sensorsAlive++;
     }
   }
-  if (waterNeededCount >= TRIGGER_WATERING_SENSORS_THRESHOLD) {
-    return MAX_ALLOWED_PUMPING_TIME;
+  if (waterNeededCount == sensorsAlive && sensorsAlive > 0) {
+    return DRY_PUMPING_TIME;
   }
-  // These pots need water more often (no water container),
-  // and short watering period reaches only these pots.
-  if (waterNeeded[1] && waterNeeded[3]) {
-    return MAX_ALLOWED_PUMPING_TIME / 2;
-  }
+  if (currentTime > pumpingLastTime + TIMED_PUMPING_DELAY) {
+    return TIMED_PUMPING_TIME;
+  }   
   return 0l;
 }
 
@@ -233,7 +267,7 @@ void loop() {
   long reqPumpingPeriod = getPumpingPeriod();
   if (isManualWaterPumping()) {
     newPumpingCmd = HIGH;
-  } else if ((reqPumpingPeriod > 0l || pumpingWater) && !isWaterBarrelEmpty()) {
+  } else if (reqPumpingPeriod > 0l || pumpingWater) {
     if (pumpingWater) {
       if (pumpingSinceTime + currentPumpingPeriod < currentTime) {
         newPumpingCmd = LOW;
@@ -266,22 +300,21 @@ void loop() {
 // ************************************************
 
 void writeHttpGreenhouseDataJSON() {
-  WiServer.print("{\n");
-  WiServer.print("\t\"id\": \"");
+  WiServer.print("{\n\t\"id\": \"");
   WiServer.print(idCounter++);
   WiServer.print("\",\n\t\"operatingMetrics\":");
   WiServer.print("{\n\t\t\"pumpingTime\": \"");
   WiServer.print(totalPumpingTime);    
   WiServer.print("\",\n\t\t\"uptime\": \"");
-  WiServer.print(currentTime);      
+  WiServer.print(currentTime);
   WiServer.print("\"\n\t},\n\t\"operatingParameters\":");
   WiServer.print("{\n\t\t\"moistureLimits\":"); 
   WiServer.print("{\n\t\t\t\"cold\": \"");  
-  WiServer.print(MOISTURE_NEEDED_THRESHOLD_COLD);
+  WiServer.print(moistureNeededThresholdCold);
   WiServer.print("\",\n\t\t\t\"hot\": \"");
-  WiServer.print(MOISTURE_NEEDED_THRESHOLD_HOT);
+  WiServer.print(moistureNeededThresholdHot);
   WiServer.print("\"\n\t\t},\n\t\t\"temperatureLimit\": \"");
-  WiServer.print(TEMPERATURE_THRESHOLD);
+  WiServer.print(temperatureThreshold);
   WiServer.print("\"\n\t},\n\t\"sensors\": ");
   WiServer.print("{\n\t\t\"addWater\": "); 
   WiServer.print(isWaterBarrelEmpty()?"true":"false");
@@ -295,8 +328,6 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print(analogRead(PIN_MOISTURE_1));
   WiServer.print("\",\n\t\t\"moisture2\": \"");
   WiServer.print(analogRead(PIN_MOISTURE_2));
-  WiServer.print("\",\n\t\t\"moisture3\": \"");
-  WiServer.print(analogRead(PIN_MOISTURE_3));
   WiServer.print("\"\n\t}\n}");
 }
 
