@@ -9,9 +9,9 @@
 unsigned char local_ip[] = {192,168,0,173};	// IP address of WiShield
 unsigned char gateway_ip[] = {192,168,0,1};	// router or gateway IP address
 unsigned char subnet_mask[] = {255,255,255,0};	// subnet mask for the local network
-const prog_char ssid[] PROGMEM = {"vauhtikeinu"};		// max 32 bytes
+const prog_char ssid[] PROGMEM = {"kommunistilinja"};		// max 32 bytes
 
-unsigned char security_type = 3;	// 0 - open; 1 - WEP; 2 - WPA; 3 - WPA2
+unsigned char security_type = 0;	// 0 - open; 1 - WEP; 2 - WPA; 3 - WPA2
 
 // WEP 128-bit keys
 // sample HEX keys
@@ -55,10 +55,12 @@ unsigned long currentTime = 0;
 #define CMD_MOISTURE_LIMIT_COLD "moistureLimitCold"
 #define CMD_MOISTURE_LIMIT_HOT "moistureLimitHot"
 #define CMD_TEMPERATURE_LIMIT "temperatureLimit"
+#define CMD_TIMED_PUMPING_DELAY "timedPumpingDelay"
 
 #define ADDR_MOISTURE_LIMIT_COLD 0
 #define ADDR_MOISTURE_LIMIT_HOT 2
 #define ADDR_TEMPERATURE_LIMIT 4
+#define ADDR_TIMED_PUMPING_DELAY 6
 
 #define URL_STATUS "/greenhouse/status"
 #define URL_COUNTER "/greenhouse/counter"
@@ -68,20 +70,20 @@ unsigned long currentTime = 0;
 #define MOISTURE_IN_WATER_THRESHOLD 700
 
 // pump triggering and state variables 
-const unsigned long PUMPING_ABSORPTION_DELAY = 600000l;
-const unsigned long DRY_PUMPING_TIME = 30000l;
-const unsigned long TIMED_PUMPING_TIME = 60000l;
-const unsigned long TIMED_PUMPING_DELAY = 3600000l;
+const unsigned long PUMPING_ABSORPTION_DELAY = 600000UL;
+const unsigned long DRY_PUMPING_TIME = 30000UL;
+const unsigned long TIMED_PUMPING_TIME = 60000UL;
 const int SENSOR_DEAD_THRESHOLD = 100;
 
 unsigned int moistureNeededThresholdCold = 600;
 unsigned int moistureNeededThresholdHot = 650;
 unsigned int temperatureThreshold = 30;
+unsigned long timedPumpingDelay = 3600000UL;
 boolean pumpingWater = false;
-unsigned long pumpingSinceTime = 0l;
-unsigned long pumpingLastTime = -PUMPING_ABSORPTION_DELAY;
-unsigned long currentPumpingPeriod = 0l;
-unsigned long totalPumpingTime = 0l;
+unsigned long pumpingSinceTime = 0UL;
+unsigned long pumpingLastTime = 0UL;
+unsigned long currentPumpingPeriod = 0UL;
+unsigned long totalPumpingTime = 0UL;
 float currentTemperature = -999.99;
 float currentHumidity = -999.99;
 
@@ -94,7 +96,8 @@ void setup() {
   moistureNeededThresholdCold = EEPROMReadInt(ADDR_MOISTURE_LIMIT_COLD);
   moistureNeededThresholdHot = EEPROMReadInt(ADDR_MOISTURE_LIMIT_HOT);
   temperatureThreshold = EEPROMReadInt(ADDR_TEMPERATURE_LIMIT);      
-      
+  timedPumpingDelay = ((unsigned long)EEPROMReadInt(ADDR_TIMED_PUMPING_DELAY)) * 1000ul;      
+        
   //pinMode(PIN_RESET, OUTPUT);
   //digitalWrite(PIN_RESET, LOW);
   pinMode(PIN_WATER_BUTTON, INPUT);
@@ -157,6 +160,11 @@ void setParameterValues(char* URL) {
     temperatureThreshold = value;
     EEPROMWriteInt(ADDR_TEMPERATURE_LIMIT, value);    
   } 
+  value = parseParameterValue(URL, CMD_TIMED_PUMPING_DELAY);
+  if (value > 0 && value < 65535) {
+    timedPumpingDelay = ((unsigned long)value) * 1000ul;
+    EEPROMWriteInt(ADDR_TIMED_PUMPING_DELAY, value);    
+  }   
   WiServer.print("DONE");  
 }
 
@@ -167,9 +175,9 @@ unsigned int parseParameterValue(char* URL, char* parameterName) {
     return ret;
   }
   startIndex += strlen(parameterName) + 1;
-  char subbuff[4];
-  for (int i=0; i<4; i++) {
-    if (isdigit(startIndex[i]) && i<3) {
+  char subbuff[6];
+  for (int i=0; i<6; i++) {
+    if (isdigit(startIndex[i]) && i<5) {
       subbuff[i] = startIndex[i];
     } else {
       subbuff[i] = '\0';
@@ -186,7 +194,7 @@ unsigned int parseParameterValue(char* URL, char* parameterName) {
   return ret;
 }
 
-void EEPROMWriteInt(int p_address, int p_value) {
+void EEPROMWriteInt(int p_address, unsigned int p_value) {
   byte lowByte = ((p_value >> 0) & 0xFF);
   byte highByte = ((p_value >> 8) & 0xFF);
   EEPROM.write(p_address, lowByte);
@@ -218,9 +226,9 @@ void readTemperature() {
   }
 }
 
-long getPumpingPeriod() {
+unsigned long getPumpingPeriod() {
   if (isWaterBarrelEmpty()) {
-    return 0l;
+    return 0UL;
   }
   int waterNeededCount = 0;  
   int sensorsAlive = 0;
@@ -238,7 +246,7 @@ long getPumpingPeriod() {
         waterNeededCount++;  
       }
       if (moistures[i] > MOISTURE_IN_WATER_THRESHOLD) {
-        return 0l;
+        return 0UL;
       }
       sensorsAlive++;
     }
@@ -246,16 +254,19 @@ long getPumpingPeriod() {
   if (waterNeededCount == sensorsAlive && sensorsAlive > 0) {
     return DRY_PUMPING_TIME;
   }
-  if (currentTime > pumpingLastTime + TIMED_PUMPING_DELAY) {
+  if (currentTime > pumpingLastTime + timedPumpingDelay) {
     return TIMED_PUMPING_TIME;
   }   
-  return 0l;
+  return 0UL;
 }
 
 void loop() {
   currentTime = millis();
   if (lastWifiRequestTime + NO_WIFI_REQUEST_AUTOBOOT_DELAY > currentTime) {
     wdt_reset();
+  }
+  while (WiServer.sendInProgress()) {
+    delay(10);
   }
   WiServer.server_task();
   
@@ -264,7 +275,7 @@ void loop() {
   }
   
   int newPumpingCmd = LOW;
-  long reqPumpingPeriod = getPumpingPeriod();
+  unsigned long reqPumpingPeriod = getPumpingPeriod();
   if (isManualWaterPumping()) {
     newPumpingCmd = HIGH;
   } else if (reqPumpingPeriod > 0l || pumpingWater) {
@@ -275,7 +286,7 @@ void loop() {
         newPumpingCmd = HIGH;
       }
       pumpingLastTime = currentTime;
-    } else if (pumpingLastTime + PUMPING_ABSORPTION_DELAY < currentTime) {
+    } else if (pumpingLastTime + PUMPING_ABSORPTION_DELAY < currentTime || pumpingLastTime == 0UL) {
       newPumpingCmd = HIGH;
       currentPumpingPeriod = reqPumpingPeriod;
       pumpingSinceTime = currentTime;
@@ -315,6 +326,8 @@ void writeHttpGreenhouseDataJSON() {
   WiServer.print(moistureNeededThresholdHot);
   WiServer.print("\"\n\t\t},\n\t\t\"temperatureLimit\": \"");
   WiServer.print(temperatureThreshold);
+  WiServer.print("\",\n\t\t\"timedPumpingDelay\": \"");
+  WiServer.print(timedPumpingDelay);  
   WiServer.print("\"\n\t},\n\t\"sensors\": ");
   WiServer.print("{\n\t\t\"addWater\": "); 
   WiServer.print(isWaterBarrelEmpty()?"true":"false");
